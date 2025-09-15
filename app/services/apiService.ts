@@ -102,10 +102,19 @@ export async function callWebSearchApi(
     
     const data = await response.json();
     
+    // 定义搜索结果项接口
+    interface SearchResultItem {
+      title?: string;
+      url?: string;
+      snippet?: string;
+      content?: string;
+      [key: string]: unknown; // 使用unknown代替any
+    }
+    
     // 处理API响应数据结构，将search_result映射到results
     if (data.search_result && Array.isArray(data.search_result)) {
       return {
-        results: data.search_result.map((item: any, index: number) => ({
+        results: data.search_result.map((item: SearchResultItem, index: number) => ({
           title: item.title || '',
           url: item.url || '',
           snippet: item.snippet || item.content || '',
@@ -128,12 +137,16 @@ export async function callWebSearchApi(
  * 评测API调用服务
  * @param config API配置信息
  * @param request 评测请求参数
+ * @param onSseMessage SSE消息回调函数，用于流式响应
  * @returns Promise<EvaluationResponse>
  */
 export async function callEvaluationApi(
   config: ApiConfig,
-  request: EvaluationRequest
+  request: EvaluationRequest,
+  onSseMessage?: (message: string) => void
 ): Promise<EvaluationResponse> {
+  const useStream = request.stream || !!onSseMessage;
+  
   const options = {
     method: 'POST',
     headers: {
@@ -145,7 +158,7 @@ export async function callEvaluationApi(
       messages: request.messages,
       temperature: request.temperature || 0.6,
       max_tokens: request.max_tokens || 4000,
-      stream: request.stream || false
+      stream: useStream
     })
   };
 
@@ -156,6 +169,64 @@ export async function callEvaluationApi(
       throw new Error(`评测API调用失败: ${response.status} ${response.statusText}`);
     }
     
+    // 处理流式响应
+    if (useStream && onSseMessage) {
+      // 创建一个合并后的响应对象
+      const mergedResponse: EvaluationResponse = {
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: ''
+          },
+          finish_reason: 'stop'
+        }],
+        usage: {
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0
+        }
+      };
+      
+      // 处理SSE流
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          // 回调SSE消息
+          onSseMessage(chunk);
+          
+          // 解析并合并内容
+          try {
+            // 处理多行SSE数据
+            const lines = chunk.split('\n').filter(line => line.trim().startsWith('data:'));
+            for (const line of lines) {
+              const jsonStr = line.replace(/^data: /, '').trim();
+              if (jsonStr === '[DONE]') continue;
+              
+              try {
+                const data = JSON.parse(jsonStr);
+                if (data.choices && data.choices[0]?.delta?.content) {
+                  mergedResponse.choices[0].message.content += data.choices[0].delta.content;
+                }
+              } catch (_) {
+                // 忽略解析错误
+              }
+            }
+          } catch (_) {
+            // 忽略解析错误
+          }
+        }
+      }
+      
+      return mergedResponse;
+    }
+    
+    // 处理非流式响应
     const data = await response.json();
     return data;
   } catch (error) {
@@ -197,7 +268,7 @@ export function buildEvaluationPrompt(
     )
     .join('\n');
 
-  const scoreRange = scoringSystem === 'binary' ? '0-1分' : '1-5分';
+  const scoreRange = scoringSystem === 'binary' ? '0-2分' : '1-5分';
   
   return `你是一个专业的搜索引擎评测专家。请按照以下要求对搜索结果进行评分：
 

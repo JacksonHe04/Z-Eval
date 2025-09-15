@@ -15,12 +15,20 @@ interface Dimension {
   enabled: boolean;
 }
 
+// 定义搜索结果类型
+interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+  rank: number;
+}
+
 interface EvaluationResult {
   engineId: number;
   engineName: string;
   query: string;
   round: number;
-  searchResults: any[];
+  searchResults: SearchResult[];
   scores: Record<string, number>;
   weightedScore: number;
   timestamp: string;
@@ -41,6 +49,9 @@ interface EngineStats {
   scoreHistory: number[];
 }
 
+// 定义标签页类型
+type TabKey = 'overview' | 'trends' | 'dimensions';
+
 /**
  * 底部汇总展示面板组件
  * 显示所有搜索引擎的分数对比、趋势分析和统计信息
@@ -50,7 +61,8 @@ export default function SummaryPanel({
   dimensions,
   evaluationResults
 }: SummaryPanelProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'trends' | 'dimensions'>('overview');
+  // 当前活动标签页
+  const [activeTab, setActiveTab] = useState<TabKey>('overview');
 
   /**
    * 计算各搜索引擎的统计数据
@@ -185,7 +197,7 @@ export default function SummaryPanel({
         ].map(tab => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key as any)}
+            onClick={() => setActiveTab(tab.key as TabKey)}
             className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
               activeTab === tab.key
                 ? 'bg-blue-100 text-blue-700'

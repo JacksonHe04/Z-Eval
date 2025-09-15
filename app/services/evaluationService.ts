@@ -83,6 +83,7 @@ interface SearchResultCallback {
  * @param dimensions 评测维度列表
  * @param config 评测配置
  * @param round 评测轮次
+ * @param onSseMessage SSE消息回调函数，用于流式响应
  * @returns Promise<EvaluationResult>
  */
 /**
@@ -94,7 +95,8 @@ export async function evaluateWithSearchResults(
   dimensions: Dimension[],
   config: EvaluationConfig,
   round: number,
-  searchResponse: WebSearchResponse
+  searchResponse: WebSearchResponse,
+  onSseMessage?: (message: string, metadata?: {dimension?: string, engine?: string, query?: string}) => void
 ): Promise<EvaluationResult> {
   console.log(`开始评测搜索引擎 ${searchEngine.name}`);
 
@@ -119,21 +121,33 @@ export async function evaluateWithSearchResults(
           config.scoringSystem
         );
 
-        const evaluationResponse = await callEvaluationApi(apiConfig, {
-          model: config.modelKey,
-          messages: [
-            {
-              role: 'system',
-              content: '你是一个专业的搜索引擎评测专家。请严格按照用户要求的结构化格式输出评测结果，确保在"最终得分："后面给出明确的数字分数。'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.1,
-          max_tokens: 3000
-        });
+        const evaluationResponse = await callEvaluationApi(
+          apiConfig, 
+          {
+            model: config.modelKey,
+            messages: [
+              {
+                role: 'system',
+                content: '你是一个专业的搜索引擎评测专家。请严格按照用户要求的结构化格式输出评测结果，确保在"最终得分："后面给出明确的数字分数。'
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            temperature: 0.1,
+            max_tokens: 3000,
+            stream: true
+          },
+          // 传递SSE消息回调函数
+          onSseMessage ? (message) => {
+            onSseMessage(message, {
+              dimension: dimension.name,
+              engine: searchEngine.name,
+              query: query
+            });
+          } : undefined
+        );
 
         // 解析评分结果 - 优先从"最终得分："标签中提取
         const responseContent = evaluationResponse.choices[0]?.message?.content || '0';
@@ -181,13 +195,23 @@ export async function evaluateWithSearchResults(
 
 /**
  * 原有的评测函数（包含搜索步骤）
+ * @param query 查询内容
+ * @param searchEngine 搜索引擎配置
+ * @param dimensions 评测维度列表
+ * @param config 评测配置
+ * @param round 评测轮次
+ * @param onSearchResult 搜索结果即时回调函数
+ * @param onSseMessage SSE消息回调函数，用于流式响应
+ * @returns Promise<EvaluationResult>
  */
 export async function evaluateSearchEngine(
   query: string,
   searchEngine: SearchEngine,
   dimensions: Dimension[],
   config: EvaluationConfig,
-  round: number
+  round: number,
+  onSearchResult?: (searchResult: SearchResultCallback) => void,
+  onSseMessage?: (message: string, metadata?: {dimension?: string, engine?: string, query?: string}) => void
 ): Promise<EvaluationResult> {
   try {
     // 1. 调用WebSearch API获取搜索结果
@@ -204,6 +228,17 @@ export async function evaluateSearchEngine(
       count: 10
     });
 
+    // 立即回调搜索结果
+    if (onSearchResult) {
+      onSearchResult({
+        engineId: searchEngine.id,
+        engineName: searchEngine.name,
+        query,
+        searchResults: searchResponse.results,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     // 2. 对每个维度进行评分
     const scores: Record<string, number> = {};
     const enabledDimensions = dimensions.filter(dim => dim.enabled);
@@ -216,17 +251,48 @@ export async function evaluateSearchEngine(
         config.scoringSystem
       );
 
-      const evaluationResponse = await callEvaluationApi(apiConfig, {
-        model: config.modelKey,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }]
-      });
+      const evaluationResponse = await callEvaluationApi(
+        apiConfig, 
+        {
+          model: config.modelKey,
+          messages: [{
+            role: 'system',
+            content: '你是一个专业的搜索引擎评测专家。请严格按照用户要求的结构化格式输出评测结果，确保在"最终得分："后面给出明确的数字分数。'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }],
+          temperature: 0.1,
+          max_tokens: 3000,
+          stream: true
+        },
+        // 传递SSE消息回调函数
+        onSseMessage ? (message) => {
+          onSseMessage(message, {
+            dimension: dimension.name,
+            engine: searchEngine.name,
+            query: query
+          });
+        } : undefined
+      );
 
-      // 解析评分结果
-      const scoreText = evaluationResponse.choices[0]?.message?.content || '0';
-      const score = parseFloat(scoreText.match(/\d+(\.\d+)?/)?.[0] || '0');
+      // 解析评分结果 - 优先从"最终得分："标签中提取
+      const responseContent = evaluationResponse.choices[0]?.message?.content || '0';
+      let score = 0;
+      
+      // 尝试从"最终得分："标签中提取分数
+      const finalScoreMatch = responseContent.match(/最终得分[：:]\s*(\d+(?:\.\d+)?)/i);
+      if (finalScoreMatch) {
+        score = parseFloat(finalScoreMatch[1]);
+      } else {
+        // 备用方案：从整个文本中提取第一个数字
+        const numberMatch = responseContent.match(/\d+(?:\.\d+)?/);
+        if (numberMatch) {
+          score = parseFloat(numberMatch[0]);
+        }
+      }
+      
       scores[dimension.name] = score;
     }
 
@@ -267,7 +333,8 @@ export async function runOptimizedBatchEvaluation(
   config: EvaluationConfig,
   rounds: number,
   onProgress?: (progress: EvaluationProgress) => void,
-  onSearchResult?: (searchResult: SearchResultCallback) => void
+  onSearchResult?: (searchResult: SearchResultCallback) => void,
+  onSseMessage?: (message: string, metadata?: {dimension?: string, engine?: string, query?: string}) => void
 ): Promise<EvaluationResult[]> {
   const results: EvaluationResult[] = [];
   const totalTasks = queries.length * searchEngines.length * rounds;
@@ -337,7 +404,8 @@ export async function runOptimizedBatchEvaluation(
             dimensions,
             config,
             round,
-            searchResponse
+            searchResponse,
+            onSseMessage
           );
           
           results.push(result);
@@ -374,6 +442,8 @@ export async function runOptimizedBatchEvaluation(
  * @param config 评测配置
  * @param rounds 评测轮次
  * @param onProgress 进度回调函数
+ * @param onSearchResult 搜索结果即时回调函数
+ * @param onSseMessage SSE消息回调函数，用于流式响应
  * @returns Promise<EvaluationResult[]>
  */
 export async function runBatchEvaluation(
@@ -382,7 +452,9 @@ export async function runBatchEvaluation(
   dimensions: Dimension[],
   config: EvaluationConfig,
   rounds: number,
-  onProgress?: (progress: EvaluationProgress) => void
+  onProgress?: (progress: EvaluationProgress) => void,
+  onSearchResult?: (searchResult: SearchResultCallback) => void,
+  onSseMessage?: (message: string, metadata?: {dimension?: string, engine?: string, query?: string}) => void
 ): Promise<EvaluationResult[]> {
   const results: EvaluationResult[] = [];
   const totalTasks = queries.length * searchEngines.length * rounds;
@@ -410,6 +482,17 @@ export async function runBatchEvaluation(
         });
         
         searchResultsMap.set(engine.id, searchResponse);
+        
+        // 立即回调搜索结果
+        if (onSearchResult) {
+          onSearchResult({
+            engineId: engine.id,
+            engineName: engine.name,
+            query,
+            searchResults: searchResponse.results,
+            timestamp: new Date().toISOString()
+          });
+        }
         
         // 添加延迟避免API限流
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -445,7 +528,8 @@ export async function runBatchEvaluation(
             dimensions,
             config,
             round,
-            searchResponse
+            searchResponse,
+            onSseMessage
           );
           
           results.push(result);
@@ -483,6 +567,7 @@ export async function runBatchEvaluation(
  * @param rounds 评测轮次
  * @param onProgress 进度回调函数
  * @param onSearchResult 搜索结果即时回调函数
+ * @param onSseMessage SSE消息回调函数，用于流式响应
  * @returns Promise<EvaluationResult[]>
  */
 export async function runOptimizedSingleEvaluation(
@@ -492,7 +577,8 @@ export async function runOptimizedSingleEvaluation(
   config: EvaluationConfig,
   rounds: number,
   onProgress?: (progress: EvaluationProgress) => void,
-  onSearchResult?: (searchResult: SearchResultCallback) => void
+  onSearchResult?: (searchResult: SearchResultCallback) => void,
+  onSseMessage?: (message: string, metadata?: {dimension?: string, engine?: string, query?: string}) => void
 ): Promise<EvaluationResult[]> {
   return runOptimizedBatchEvaluation(
     [query],
@@ -501,7 +587,8 @@ export async function runOptimizedSingleEvaluation(
     config,
     rounds,
     onProgress,
-    onSearchResult
+    onSearchResult,
+    onSseMessage
   );
 }
 
@@ -513,6 +600,8 @@ export async function runOptimizedSingleEvaluation(
  * @param config 评测配置
  * @param rounds 评测轮次
  * @param onProgress 进度回调函数
+ * @param onSearchResult 搜索结果即时回调函数
+ * @param onSseMessage SSE消息回调函数，用于流式响应
  * @returns Promise<EvaluationResult[]>
  */
 export async function runSingleEvaluation(
@@ -521,7 +610,9 @@ export async function runSingleEvaluation(
   dimensions: Dimension[],
   config: EvaluationConfig,
   rounds: number,
-  onProgress?: (progress: EvaluationProgress) => void
+  onProgress?: (progress: EvaluationProgress) => void,
+  onSearchResult?: (searchResult: SearchResultCallback) => void,
+  onSseMessage?: (message: string, metadata?: {dimension?: string, engine?: string, query?: string}) => void
 ): Promise<EvaluationResult[]> {
   return runBatchEvaluation(
     [query],
@@ -529,7 +620,9 @@ export async function runSingleEvaluation(
     dimensions,
     config,
     rounds,
-    onProgress
+    onProgress,
+    onSearchResult,
+    onSseMessage
   );
 }
 

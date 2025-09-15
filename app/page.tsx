@@ -5,7 +5,9 @@ import ConfigPanel from './components/ConfigPanel';
 import ResultsPanel from './components/ResultsPanel';
 import SummaryPanel from './components/SummaryPanel';
 import SettingsModal from './components/SettingsModal';
-import type { SearchResultCallback } from './services/evaluationService';
+import StreamLogsPanel from './components/StreamLogsPanel';
+import type { SearchResultCallback, EvaluationResult, EvaluationProgress } from './services/evaluationService';
+import type { SSEMessageCallback } from './types';
 
 /**
  * 搜索引擎评测工具主页面
@@ -15,9 +17,9 @@ export default function Home() {
   // 搜索引擎配置状态
   const [searchEngines, setSearchEngines] = useState([
     { id: 1, code: 'search_std', name: '智谱基础版搜索引擎' },
-    { id: 2, code: 'search_pro', name: '智谱高阶版搜索引擎' },
+    // { id: 2, code: 'search_pro', name: '智谱高阶版搜索引擎' },
     { id: 3, code: 'search_pro_sogou', name: '搜狗' },
-    { id: 4, code: 'search_pro_quark', name: '夸克搜索' },
+    // { id: 4, code: 'search_pro_quark', name: '夸克搜索' },
   ]);
 
   // 评测维度配置
@@ -28,11 +30,17 @@ export default function Home() {
   ]);
 
   // 评测结果状态
-  const [evaluationResults, setEvaluationResults] = useState<any[]>([]);
+  const [evaluationResults, setEvaluationResults] = useState<EvaluationResult[]>([]);
   const [isEvaluating, setIsEvaluating] = useState(false);
   
   // 搜索结果状态（用于即时显示）
   const [searchResults, setSearchResults] = useState<SearchResultCallback[]>([]);
+  
+  // SSE消息状态（用于流式日志显示）
+  const [sseMessages, setSseMessages] = useState<{message: string, timestamp: string, dimension?: string, engine?: string, query?: string}[]>([]);
+  
+  // 评测进度状态
+  const [evaluationProgress, setEvaluationProgress] = useState<EvaluationProgress | null>(null);
   
   /**
    * 处理搜索结果即时回调
@@ -52,10 +60,32 @@ export default function Home() {
   };
   
   /**
-   * 清空搜索结果（开始新评测时）
+ * 处理SSE消息回调
+ */
+const handleSseMessage: SSEMessageCallback = (message, metadata) => {
+  setSseMessages(prev => [...prev, {
+    message,
+    timestamp: new Date().toISOString(),
+    dimension: metadata?.dimension,
+    engine: metadata?.engine,
+    query: metadata?.query
+  }]);
+};
+  
+  /**
+   * 处理评测进度回调
    */
-  const clearSearchResults = () => {
+  const handleEvaluationProgress = (progress: EvaluationProgress) => {
+    setEvaluationProgress(progress);
+  };
+  
+  /**
+   * 清空搜索结果和SSE消息（开始新评测时）
+   */
+  const clearResults = () => {
     setSearchResults([]);
+    setSseMessages([]);
+    setEvaluationProgress(null);
   };
   
   // 设置弹窗状态
@@ -68,7 +98,7 @@ export default function Home() {
     // 评分模型配置
     apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
     apiKey: '',
-    modelKey: 'glm-4.5'
+    modelKey: 'glm-4-plus'
   });
   
   // 汇总面板折叠状态
@@ -108,7 +138,7 @@ export default function Home() {
       {/* 主要内容区域 */}
       <div className="flex flex-col lg:flex-row h-[calc(100vh-80px)]">
         {/* 左侧配置面板 */}
-        <div className="w-full lg:w-1/3 xl:w-1/4 bg-white border-r border-gray-200 overflow-y-auto max-h-[50vh] lg:max-h-none">
+        <div className="w-full lg:w-1/4 xl:w-1/5 bg-white border-r border-gray-200 overflow-y-auto max-h-[50vh] lg:max-h-none">
           <ConfigPanel
             dimensions={dimensions}
             setDimensions={setDimensions}
@@ -119,10 +149,30 @@ export default function Home() {
             apiConfig={apiConfig}
             onEvaluationRoundsChange={setEvaluationRounds}
             onSearchResult={handleSearchResult}
+            onSseMessage={handleSseMessage}
+            onEvaluationProgress={handleEvaluationProgress}
+            clearResults={clearResults}
           />
         </div>
 
-        {/* 右侧内容区域 */}
+        {/* 中间流式日志区域 */}
+        <div className="w-full lg:w-2/5 xl:w-2/5 bg-white border-r border-gray-200 overflow-y-auto max-h-[50vh] lg:max-h-none">
+          <div className="p-4 sm:p-6">
+            <div className="mb-4 sm:mb-6">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">流式日志</h2>
+              <p className="text-sm text-gray-600">
+                实时显示API调用和SSE流式响应
+              </p>
+            </div>
+            <StreamLogsPanel
+              searchResults={searchResults}
+              sseMessages={sseMessages}
+              isEvaluating={isEvaluating}
+            />
+          </div>
+        </div>
+
+        {/* 右侧结果区域 */}
         <div className="flex-1 flex flex-col min-h-0">
           {/* 搜索结果展示面板 */}
           <div className="flex-1 overflow-y-auto">
@@ -133,6 +183,7 @@ export default function Home() {
               isEvaluating={isEvaluating}
               totalRounds={evaluationRounds}
               searchResults={searchResults}
+              evaluationProgress={evaluationProgress}
             />
           </div>
 

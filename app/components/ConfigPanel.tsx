@@ -43,6 +43,9 @@ interface ConfigPanelProps {
   apiConfig: ApiConfig;
   onEvaluationRoundsChange?: (rounds: number) => void;
   onSearchResult?: (searchResult: SearchResultCallback) => void;
+  onSseMessage?: (message: string, metadata?: {dimension?: string, engine?: string, query?: string}) => void;
+  onEvaluationProgress?: (progress: EvaluationProgress) => void;
+  clearResults?: () => void;
 }
 
 /**
@@ -58,7 +61,10 @@ export default function ConfigPanel({
   searchEngines,
   apiConfig,
   onEvaluationRoundsChange,
-  onSearchResult
+  onSearchResult,
+  onSseMessage,
+  onEvaluationProgress,
+  clearResults
 }: ConfigPanelProps) {
   // 查询配置状态
   const [queryConfig, setQueryConfig] = useState<{
@@ -82,8 +88,6 @@ export default function ConfigPanel({
     scoringSystem: queryConfig.scoringSystem
   };
 
-  // 评测进度状态
-  const [evaluationProgress, setEvaluationProgress] = useState<EvaluationProgress | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   // 提示词模板状态
@@ -156,7 +160,6 @@ export default function ConfigPanel({
     setErrorMessage('');
     setIsEvaluating(true);
     setEvaluationResults([]);
-    setEvaluationProgress(null);
 
     try {
       // 更新API配置的评分制式
@@ -173,6 +176,11 @@ export default function ConfigPanel({
 
       let results: EvaluationResult[];
 
+      // 清空之前的结果
+      if (clearResults) {
+        clearResults();
+      }
+      
       if (queryConfig.singleQuery.trim()) {
         // 单条查询评测
         results = await runOptimizedSingleEvaluation(
@@ -181,8 +189,9 @@ export default function ConfigPanel({
           updatedDimensions,
           evaluationConfig,
           queryConfig.evaluationRounds,
-          setEvaluationProgress,
-          onSearchResult
+          onEvaluationProgress,
+          onSearchResult,
+          onSseMessage
         );
       } else {
         // 批量查询评测
@@ -193,8 +202,9 @@ export default function ConfigPanel({
           updatedDimensions,
           evaluationConfig,
           queryConfig.evaluationRounds,
-          setEvaluationProgress,
-          onSearchResult
+          onEvaluationProgress,
+          onSearchResult,
+          onSseMessage
         );
       }
 
@@ -204,7 +214,6 @@ export default function ConfigPanel({
       setErrorMessage(`评测失败: ${error instanceof Error ? error.message : '未知错误'}`);
     } finally {
       setIsEvaluating(false);
-      setEvaluationProgress(null);
     }
   };
 
@@ -251,6 +260,7 @@ export default function ConfigPanel({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value={1}>1轮</option>
+              <option value={2}>2轮</option>
               <option value={3}>3轮</option>
               <option value={5}>5轮</option>
             </select>
@@ -265,7 +275,7 @@ export default function ConfigPanel({
               onChange={(e) => setQueryConfig({...queryConfig, scoringSystem: e.target.value as 'binary' | 'fivePoint'})}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="binary">二分制 (0/1)</option>
+              <option value="binary">二分制 (0-2)</option>
               <option value="fivePoint">五分制 (1-5)</option>
             </select>
           </div>
@@ -290,27 +300,7 @@ export default function ConfigPanel({
         </div>
       )}
 
-      {/* 评测进度显示 */}
-      {evaluationProgress && (
-        <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            </div>
-            <div className="ml-3">
-               <p className="text-sm text-blue-800">
-                 正在评测: {evaluationProgress.currentEngine} 
-                 (第 {evaluationProgress.currentRound}/{evaluationProgress.totalRounds} 轮)
-                 {evaluationProgress.currentDimension && ` - ${evaluationProgress.currentDimension}`}
-                 {evaluationProgress.progress && ` - ${Math.round(evaluationProgress.progress)}%`}
-               </p>
-             </div>
-          </div>
-        </div>
-      )}
+
 
       {/* 提示词编辑区 */}
       <div className="space-y-3 sm:space-y-4">
