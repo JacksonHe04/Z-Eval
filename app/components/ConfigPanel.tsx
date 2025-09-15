@@ -222,19 +222,6 @@ export default function ConfigPanel({
       {/* 查询输入区 */}
       <div className="space-y-3 sm:space-y-4">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900">查询配置</h2>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            单条查询
-          </label>
-          <input
-            type="text"
-            value={queryConfig.singleQuery}
-            onChange={(e) => setQueryConfig({...queryConfig, singleQuery: e.target.value})}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="输入搜索查询"
-          />
-        </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">

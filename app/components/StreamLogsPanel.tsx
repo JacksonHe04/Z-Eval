@@ -67,7 +67,7 @@ export default function StreamLogsPanel({
         query: result.query,
         type: '搜索请求',
         content: `获取到${result.searchResults.length}条搜索结果`,
-        details: result.searchResults.map(sr => `${sr.rank}. ${sr.title}`).slice(0, 3),
+        details: result.searchResults.map(sr => `${sr.rank}. ${sr.title}`).slice(0,4),
         status: 'success' as const,
         isSse: false
       };
@@ -136,7 +136,7 @@ export default function StreamLogsPanel({
         engine: sseMsg.engine || '',
         query: sseMsg.query || '',
         type: 'SSE流',
-        content: sseMsg.dimension ? `${sseMsg.dimension}维度评分流式响应` : parsedContent,
+        content: sseMsg.dimension ? `${sseMsg.dimension}维度评分` : parsedContent,
         details: detailContent,
         status: 'success' as const,
         isSse: true
@@ -238,7 +238,7 @@ export default function StreamLogsPanel({
           )}
         </div>
       ))}
-      {isEvaluating && (
+      {isEvaluating && processedLogs.some(log => log.status === 'pending') && (
         <div className="flex items-center justify-center py-4">
           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div>
           <span className="text-sm text-gray-600">正在处理...</span>

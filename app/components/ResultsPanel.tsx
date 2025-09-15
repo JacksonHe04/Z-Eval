@@ -232,10 +232,21 @@ export default function ResultsPanel({
         <div className="mb-4 sm:mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-semibold text-blue-900">评测进度</h3>
-            <div className="flex items-center space-x-2">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-              <span className="text-sm text-blue-700">评测中...</span>
-            </div>
+            {isEvaluating ? (
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span className="text-sm text-blue-700">评测中...</span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
+                  <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <span className="text-sm text-green-700">评测完成</span>
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">

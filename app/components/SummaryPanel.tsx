@@ -192,7 +192,7 @@ export default function SummaryPanel({
       <div className="flex space-x-1 mb-4 sm:mb-6 overflow-x-auto">
         {[
           { key: 'overview', label: '总览' },
-          { key: 'trends', label: '趋势分析' },
+          
           { key: 'dimensions', label: '维度分析' }
         ].map(tab => (
           <button
@@ -263,29 +263,6 @@ export default function SummaryPanel({
                 ))
               }
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* 趋势分析标签页 */}
-      {activeTab === 'trends' && (
-        <div className="space-y-4 sm:space-y-6">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900">分数趋势分析</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-            {engineStats.map(stat => (
-              <div key={stat.engineId} className="bg-gray-50 p-3 sm:p-4 rounded-lg">
-                <div className="flex items-center justify-between mb-2 sm:mb-3">
-                  <h4 className="font-medium text-gray-900 text-sm sm:text-base">{stat.engineName}</h4>
-                  <span className="text-xs sm:text-sm text-gray-600">
-                    平均: {stat.averageScore.toFixed(2)}
-                  </span>
-                </div>
-                {renderTrendChart(stat.scoreHistory)}
-                <div className="mt-2 text-xs text-gray-500">
-                  {stat.scoreHistory.length} 轮评测数据
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       )}
