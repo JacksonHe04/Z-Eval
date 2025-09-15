@@ -1,103 +1,163 @@
-import Image from "next/image";
+'use client';
 
+import { useState, useEffect } from 'react';
+import ConfigPanel from './components/ConfigPanel';
+import ResultsPanel from './components/ResultsPanel';
+import SummaryPanel from './components/SummaryPanel';
+import SettingsModal from './components/SettingsModal';
+
+/**
+ * 搜索引擎评测工具主页面
+ * 提供左侧配置面板和右侧结果展示的双栏布局
+ */
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  // 搜索引擎配置状态
+  const [searchEngines, setSearchEngines] = useState([
+    { id: 1, code: 'search_std', name: '智谱基础版搜索引擎' },
+    { id: 2, code: 'search_pro', name: '智谱高阶版搜索引擎' },
+    { id: 3, code: 'search_pro_sogou', name: '搜狗' },
+    { id: 4, code: 'search_pro_quark', name: '夸克搜索' },
+  ]);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // 评测维度配置
+  const [dimensions, setDimensions] = useState([
+    { id: 1, name: '权威性', weight: 0.4, enabled: true },
+    { id: 2, name: '相关性', weight: 0.35, enabled: true },
+    { id: 3, name: '时效性', weight: 0.25, enabled: true },
+  ]);
+
+  // 评测结果状态
+  const [evaluationResults, setEvaluationResults] = useState<any[]>([]);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  
+  // 设置弹窗状态
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  // API配置状态（从SettingsModal提升到主页面）
+  const [apiConfig, setApiConfig] = useState({
+    // 搜索引擎配置
+    websearchUrl: 'https://open.bigmodel.cn/api/paas/v4/web_search',
+    // 评分模型配置
+    apiUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    apiKey: '',
+    modelKey: 'glm-4.5'
+  });
+  
+  // 汇总面板折叠状态
+  const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(true);
+  
+  // 评测轮数状态
+  const [evaluationRounds, setEvaluationRounds] = useState(3);
+  
+  // 当有评测结果时自动展开汇总面板
+  useEffect(() => {
+    if (evaluationResults.length > 0 && isSummaryCollapsed) {
+      setIsSummaryCollapsed(false);
+    }
+  }, [evaluationResults.length, isSummaryCollapsed]);
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* 顶部标题栏 */}
+      <header className="bg-white shadow-sm border-b">
+        <div className="px-6 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Z.Eval</h1>
+            <p className="text-sm text-gray-600 mt-1">多维度评估搜索引擎结果质量</p>
+          </div>
+          <button 
+             onClick={() => setIsSettingsOpen(true)}
+             className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors"
+           >
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+             </svg>
+           </button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+      </header>
+
+      {/* 主要内容区域 */}
+      <div className="flex flex-col lg:flex-row h-[calc(100vh-80px)]">
+        {/* 左侧配置面板 */}
+        <div className="w-full lg:w-1/3 xl:w-1/4 bg-white border-r border-gray-200 overflow-y-auto max-h-[50vh] lg:max-h-none">
+          <ConfigPanel
+            dimensions={dimensions}
+            setDimensions={setDimensions}
+            isEvaluating={isEvaluating}
+            setIsEvaluating={setIsEvaluating}
+            setEvaluationResults={setEvaluationResults}
+            searchEngines={searchEngines}
+            apiConfig={apiConfig}
+            onEvaluationRoundsChange={setEvaluationRounds}
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+        </div>
+
+        {/* 右侧内容区域 */}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* 搜索结果展示面板 */}
+          <div className="flex-1 overflow-y-auto">
+            <ResultsPanel
+              searchEngines={searchEngines}
+              dimensions={dimensions.filter(dim => dim.enabled)}
+              evaluationResults={evaluationResults}
+              isEvaluating={isEvaluating}
+              totalRounds={evaluationRounds}
+            />
+          </div>
+
+          {/* 底部汇总面板 */}
+          <div className={`border-t border-gray-200 bg-white transition-all duration-300 ${
+            isSummaryCollapsed ? 'h-12' : 'h-60 sm:h-72 lg:h-80'
+          }`}>
+            {/* 折叠/展开控制栏 */}
+            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900">汇总统计</h2>
+              <button
+                onClick={() => setIsSummaryCollapsed(!isSummaryCollapsed)}
+                disabled={evaluationResults.length === 0}
+                className={`p-1 rounded-md transition-colors ${
+                  evaluationResults.length === 0
+                    ? 'text-gray-300 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                }`}
+              >
+                <svg 
+                  className={`w-5 h-5 transition-transform duration-200 ${
+                    isSummaryCollapsed ? 'rotate-0' : 'rotate-180'
+                  }`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* 汇总内容区域 */}
+            {!isSummaryCollapsed && (
+              <div className="h-[calc(100%-48px)] overflow-hidden">
+                <SummaryPanel
+                  searchEngines={searchEngines}
+                  dimensions={dimensions.filter(dim => dim.enabled)}
+                  evaluationResults={evaluationResults}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      
+      {/* 设置弹窗 */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        searchEngines={searchEngines}
+        setSearchEngines={setSearchEngines}
+        apiConfig={apiConfig}
+        setApiConfig={setApiConfig}
+      />
     </div>
   );
 }
