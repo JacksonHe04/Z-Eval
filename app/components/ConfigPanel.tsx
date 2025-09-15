@@ -3,13 +3,14 @@
 import { useState, useEffect } from 'react';
 import PromptEditor from './PromptEditor';
 import { 
-  runSingleEvaluation, 
-  runBatchEvaluation, 
+  runOptimizedSingleEvaluation, 
+  runOptimizedBatchEvaluation, 
   parseBatchQueries,
   validateEvaluationConfig,
   type EvaluationConfig,
   type EvaluationProgress,
-  type EvaluationResult
+  type EvaluationResult,
+  type SearchResultCallback
 } from '../services/evaluationService';
 
 interface SearchEngine {
@@ -41,6 +42,7 @@ interface ConfigPanelProps {
   searchEngines: SearchEngine[];
   apiConfig: ApiConfig;
   onEvaluationRoundsChange?: (rounds: number) => void;
+  onSearchResult?: (searchResult: SearchResultCallback) => void;
 }
 
 /**
@@ -55,7 +57,8 @@ export default function ConfigPanel({
   setEvaluationResults,
   searchEngines,
   apiConfig,
-  onEvaluationRoundsChange
+  onEvaluationRoundsChange,
+  onSearchResult
 }: ConfigPanelProps) {
   // 查询配置状态
   const [queryConfig, setQueryConfig] = useState<{
@@ -172,24 +175,26 @@ export default function ConfigPanel({
 
       if (queryConfig.singleQuery.trim()) {
         // 单条查询评测
-        results = await runSingleEvaluation(
+        results = await runOptimizedSingleEvaluation(
           queryConfig.singleQuery.trim(),
           searchEngines,
           updatedDimensions,
           evaluationConfig,
           queryConfig.evaluationRounds,
-          setEvaluationProgress
+          setEvaluationProgress,
+          onSearchResult
         );
       } else {
         // 批量查询评测
         const queries = parseBatchQueries(queryConfig.batchQueries);
-        results = await runBatchEvaluation(
+        results = await runOptimizedBatchEvaluation(
           queries,
           searchEngines,
           updatedDimensions,
           evaluationConfig,
           queryConfig.evaluationRounds,
-          setEvaluationProgress
+          setEvaluationProgress,
+          onSearchResult
         );
       }
 

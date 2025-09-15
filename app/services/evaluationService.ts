@@ -62,6 +62,20 @@ interface EvaluationProgress {
   progress: number; // 0-100
 }
 
+// 搜索结果回调接口
+interface SearchResultCallback {
+  engineId: number;
+  engineName: string;
+  query: string;
+  searchResults: Array<{
+    title: string;
+    url: string;
+    snippet: string;
+    rank: number;
+  }>;
+  timestamp: string;
+}
+
 /**
  * 执行单个搜索引擎的评测
  * @param query 查询内容
@@ -236,7 +250,124 @@ export async function evaluateSearchEngine(
 }
 
 /**
- * 执行批量评测
+ * 优化版批量评测：先并行搜索，再统一评测
+ * @param queries 查询列表
+ * @param searchEngines 搜索引擎列表
+ * @param dimensions 评测维度列表
+ * @param config 评测配置
+ * @param rounds 评测轮次
+ * @param onProgress 进度回调函数
+ * @param onSearchResult 搜索结果即时回调函数
+ * @returns Promise<EvaluationResult[]>
+ */
+export async function runOptimizedBatchEvaluation(
+  queries: string[],
+  searchEngines: SearchEngine[],
+  dimensions: Dimension[],
+  config: EvaluationConfig,
+  rounds: number,
+  onProgress?: (progress: EvaluationProgress) => void,
+  onSearchResult?: (searchResult: SearchResultCallback) => void
+): Promise<EvaluationResult[]> {
+  const results: EvaluationResult[] = [];
+  const totalTasks = queries.length * searchEngines.length * rounds;
+  let completedTasks = 0;
+
+  for (const query of queries) {
+    // 第一阶段：并行执行所有搜索引擎的查询
+    const searchPromises = searchEngines.map(async (engine) => {
+      try {
+        const apiConfig: ApiConfig = {
+          websearchUrl: config.websearchUrl,
+          evaluationUrl: config.apiUrl,
+          apiKey: config.modelApiKey,
+          modelKey: config.modelKey
+        };
+
+        const searchResponse = await callWebSearchApi(apiConfig, {
+          search_query: query,
+          search_engine: engine.code,
+          count: 10
+        });
+
+        // 立即回调搜索结果
+        if (onSearchResult) {
+          onSearchResult({
+            engineId: engine.id,
+            engineName: engine.name,
+            query,
+            searchResults: searchResponse.results,
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        return { engine, searchResponse };
+      } catch (error) {
+        console.error(`搜索失败 - 查询: ${query}, 引擎: ${engine.name}`, error);
+        return { engine, searchResponse: null };
+      }
+    });
+
+    // 等待所有搜索完成
+    const searchResults = await Promise.all(searchPromises);
+
+    // 第二阶段：对所有搜索结果进行评测
+    for (const { engine, searchResponse } of searchResults) {
+      if (!searchResponse) {
+        console.error(`跳过评分 - 查询: ${query}, 引擎: ${engine.name} (搜索失败)`);
+        continue;
+      }
+
+      for (let round = 1; round <= rounds; round++) {
+        try {
+          // 更新进度
+          if (onProgress) {
+            onProgress({
+              currentEngine: engine.name,
+              currentRound: round,
+              totalRounds: rounds,
+              progress: Math.round((completedTasks / totalTasks) * 100)
+            });
+          }
+
+          // 使用已获取的搜索结果进行评分
+          const result = await evaluateWithSearchResults(
+            query,
+            engine,
+            dimensions,
+            config,
+            round,
+            searchResponse
+          );
+          
+          results.push(result);
+          completedTasks++;
+
+          // 添加延迟避免API限流
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(`评测失败 - 查询: ${query}, 引擎: ${engine.name}, 轮次: ${round}`, error);
+          completedTasks++;
+        }
+      }
+    }
+  }
+
+  // 完成进度回调
+  if (onProgress) {
+    onProgress({
+      currentEngine: '完成',
+      currentRound: rounds,
+      totalRounds: rounds,
+      progress: 100
+    });
+  }
+
+  return results;
+}
+
+/**
+ * 原版批量评测（保持向后兼容）
  * @param queries 查询列表
  * @param searchEngines 搜索引擎列表
  * @param dimensions 评测维度列表
@@ -344,7 +475,38 @@ export async function runBatchEvaluation(
 }
 
 /**
- * 执行单次评测
+ * 优化版单次评测
+ * @param query 单个查询
+ * @param searchEngines 搜索引擎列表
+ * @param dimensions 评测维度列表
+ * @param config 评测配置
+ * @param rounds 评测轮次
+ * @param onProgress 进度回调函数
+ * @param onSearchResult 搜索结果即时回调函数
+ * @returns Promise<EvaluationResult[]>
+ */
+export async function runOptimizedSingleEvaluation(
+  query: string,
+  searchEngines: SearchEngine[],
+  dimensions: Dimension[],
+  config: EvaluationConfig,
+  rounds: number,
+  onProgress?: (progress: EvaluationProgress) => void,
+  onSearchResult?: (searchResult: SearchResultCallback) => void
+): Promise<EvaluationResult[]> {
+  return runOptimizedBatchEvaluation(
+    [query],
+    searchEngines,
+    dimensions,
+    config,
+    rounds,
+    onProgress,
+    onSearchResult
+  );
+}
+
+/**
+ * 原版单次评测（保持向后兼容）
  * @param query 单个查询
  * @param searchEngines 搜索引擎列表
  * @param dimensions 评测维度列表
@@ -444,5 +606,6 @@ export type {
   Dimension,
   EvaluationConfig,
   EvaluationResult,
-  EvaluationProgress
+  EvaluationProgress,
+  SearchResultCallback
 };

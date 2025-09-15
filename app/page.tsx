@@ -5,6 +5,7 @@ import ConfigPanel from './components/ConfigPanel';
 import ResultsPanel from './components/ResultsPanel';
 import SummaryPanel from './components/SummaryPanel';
 import SettingsModal from './components/SettingsModal';
+import type { SearchResultCallback } from './services/evaluationService';
 
 /**
  * 搜索引擎评测工具主页面
@@ -29,6 +30,33 @@ export default function Home() {
   // 评测结果状态
   const [evaluationResults, setEvaluationResults] = useState<any[]>([]);
   const [isEvaluating, setIsEvaluating] = useState(false);
+  
+  // 搜索结果状态（用于即时显示）
+  const [searchResults, setSearchResults] = useState<SearchResultCallback[]>([]);
+  
+  /**
+   * 处理搜索结果即时回调
+   */
+  const handleSearchResult = (searchResult: SearchResultCallback) => {
+    setSearchResults(prev => {
+      // 避免重复添加相同的搜索结果
+      const exists = prev.some(result => 
+        result.engineId === searchResult.engineId && 
+        result.query === searchResult.query
+      );
+      if (exists) {
+        return prev;
+      }
+      return [...prev, searchResult];
+    });
+  };
+  
+  /**
+   * 清空搜索结果（开始新评测时）
+   */
+  const clearSearchResults = () => {
+    setSearchResults([]);
+  };
   
   // 设置弹窗状态
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -90,6 +118,7 @@ export default function Home() {
             searchEngines={searchEngines}
             apiConfig={apiConfig}
             onEvaluationRoundsChange={setEvaluationRounds}
+            onSearchResult={handleSearchResult}
           />
         </div>
 
@@ -103,6 +132,7 @@ export default function Home() {
               evaluationResults={evaluationResults}
               isEvaluating={isEvaluating}
               totalRounds={evaluationRounds}
+              searchResults={searchResults}
             />
           </div>
 
